@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  marklogic:
+    image: marklogicdb/marklogic-db:${mlVersionTag}
+    hostname: ${mlHost}
+    container_name: ${mlHost}
+    ports:
+      - ${mlSystemPortSrc}:${mlSystemPortTrg}
+      - ${mlApplicationPortSrc}:${mlApplicationPortTrg}
+    environment:
+      - MARKLOGIC_INIT=true
+      - MARKLOGIC_ADMIN_USERNAME_FILE=mldb_admin_user
+      - MARKLOGIC_ADMIN_PASSWORD_FILE=mldb_admin_pwd
+      - TZ=Europe/Amsterdam
+    secrets:
+      - mldb_admin_pwd
+      - mldb_admin_user
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+
+  mosquitto:
+    image: eclipse-mosquitto:1.5.5
+    hostname: ${MQTTHost}
+    container_name: ${MQTTHost}
+    expose:
+      - ${MQTTExposePort}
+    ports:
+      - ${MQTTPortSrc}:${MQTTPortTrg}
+
+  zookeeper:
+    image: zookeeper:3.4.9
+    restart: unless-stopped
+    hostname: ${ZooKeeper}
+    container_name: ${ZooKeeper}
+    environment:
+      ZOO_MY_ID: 1
+      ZOO_PORT: ${ZooKeeperPortSrc}
+      ZOO_SERVERS: server.1=zookeeper:2888:3888
+    ports:
+      - ${ZooKeeperPortSrc}:${ZooKeeperPortTrg}
+    volumes:
+      - ./zookeeper/data:/data
+      - ./zookeeper/datalog:/datalog
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    hostname: ${Kafka}
+    container_name: ${Kafka}
+    ports:
+      - ${KafkaPortSrc}:${KafkaPortTrg}
+    environment:
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://${Kafka}:${KafkaPortTrg},PLAINTEXT_HOST://localhost:29092
+      KAFKA_ZOOKEEPER_CONNECT: "${ZooKeeper}:${ZooKeeperPortTrg}"
+      KAFKA_BROKER_ID: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    volumes:
+      - ./kafka/data:/var/lib/kafka/data
+    depends_on:
+      - zookeeper
+
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:latest
+    hostname: ${KafkaConnect}
+    container_name: ${KafkaConnect}
+    ports:
+      - ${KafkaConnectPortSrc}:${KafkaConnectPortTrg}
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: "${Kafka}:${KafkaPortTrg}"
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect
+      CONNECT_REST_PORT: ${KafkaPortTrg}
+      CONNECT_GROUP_ID: compose-connect-group
+      CONNECT_CONFIG_STORAGE_TOPIC: docker-connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: docker-connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: docker-connect-status
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_PLUGIN_PATH: '/usr/share/java,/etc/kafka-connect/jars'
+      CONNECT_CONFLUENT_TOPIC_REPLICATION_FACTOR: 1
+    volumes:
+      - /tmp/kafka/custom/jars:/etc/kafka-connect/jars:ro
+    depends_on:
+      - zookeeper
+      - kafka
+      - mosquitto
+secrets:
+  mldb_admin_user:
+    file: ./mldb_admin_user.txt
+  mldb_admin_pwd:
+    file: ./mldb_admin_pwd.txt
