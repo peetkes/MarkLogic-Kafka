@@ -190,8 +190,8 @@ The *connect-mqtt-source.json* file looks like this:
     "connector.class": "io.confluent.connect.mqtt.MqttSourceConnector",
     "tasks.max": 1,
     "mqtt.server.uri": "tcp://mosquitto:1883",
-    "mqtt.topics": "marklogic",
-    "kafka.topic": "connect-custom",
+    "mqtt.topics": "mqtt.marklogic",
+    "kafka.topic": "kafka.marklogic",
     "value.converter": "org.apache.kafka.connect.converters.ByteArrayConverter",
     "confluent.topic.bootstrap.servers": "kafka:9092",
     "confluent.topic.replication.factor": 1
@@ -214,17 +214,18 @@ Make sure the mqtt.server.uri and confluent.topic.bootstrap.servers reflect the 
 Execute the following command to test the source connector
 
 ```
+source docker/.env
 docker run -it --rm --name mqtt-publisher --network kafka_default efrecon/mqtt-client \
-pub -h mosquitto  -t "marklogic" -m "{\"id\":1234,\"message\":\"This is a test\"}"
+pub -h $MQTTHost  -t "mqtt.marklogic" -m "{\"id\":1234,\"message\":\"This is a test\"}"
 ```
 
-This will put the message onto the mosquitto topic *marklogic*.
+This will put the message onto the mosquitto topic *mqtt.marklogic*.
 
-Execute the following command to listen to the kafka topic *marklogic*
+Execute the following command to listen to the kafka topic *kafka.marklogic*
 
 ```
 docker run --rm --network kafka_default confluentinc/cp-kafka:5.1.0 \
-kafka-console-consumer --bootstrap-server kafka:9092 --topic connect-custom --from-beginning
+kafka-console-consumer --bootstrap-server $Kafka:$KafkaPortTrg --topic kafka.marklogic --from-beginning
 ```
 
 This should produce the test message in the console.
@@ -250,15 +251,15 @@ The *connect-marklogic-sink.json* file looks like this:
     "offset.storage.file.filename":"/tmp/connect.offsets",
     "offset.flush.interval.ms":10000,
     "tasks.max": 1,
-    "topics": "marklogic,connect-custom",
+    "topics": "kafka.marklogic",
     "ml.connection.host": "marklogic-kafka",
     "ml.connection.port": "8000",
     "ml.connection.securityContextType": "DIGEST",
     "ml.connection.username": "admin",
     "ml.connection.password": "admin",
-    "ml.document.collections": "purchases",
+    "ml.document.collections": "kafka.marklogic",
     "ml.document.format": "json",
-    "ml.document.uriPrefix": "/purchases/",
+    "ml.document.uriPrefix": "/kafka.marklogic/",
     "ml.document.uriSuffix": ".json",
     "confluent.topic.bootstrap.servers": "kafka:9092",
     "confluent.topic.replication.factor": 1
@@ -285,16 +286,16 @@ Since the kafka topic 'connect-custom' already contains messages from the MQTT c
 Execute te following command to see if the test document reached MarkLogic:
 
 ```
-curl --anyauth -u admin:admin --request GET http://localhost:8000/v1/search?collection=purchases
+curl --anyauth -u admin:admin --request GET http://localhost:8000/v1/search?collection=kafka.marklogic
 ```
 
 This should give back a search:response xml fragment. See below for an example:
 
 ```
 <search:response snippet-format="snippet" total="1" start="1" page-length="10" xmlns:search="http://marklogic.com/appservices/search">
-  <search:result index="1" uri="/purchases/900e1424-b2f0-4534-b2b2-b28d3d5c416b.json" path="fn:doc(&quot;/purchases/900e1424-b2f0-4534-b2b2-b28d3d5c416b.json&quot;)" score="0" confidence="0" fitness="0" href="/v1/documents?uri=%2Fpurchases%2F900e1424-b2f0-4534-b2b2-b28d3d5c416b.json" mimetype="application/json" format="json">
+  <search:result index="1" uri="/purchases/900e1424-b2f0-4534-b2b2-b28d3d5c416b.json" path="fn:doc(&quot;/kafka.marklogic/900e1424-b2f0-4534-b2b2-b28d3d5c416b.json&quot;)" score="0" confidence="0" fitness="0" href="/v1/documents?uri=%2Fkafka.marklogic%2F900e1424-b2f0-4534-b2b2-b28d3d5c416b.json" mimetype="application/json" format="json">
     <search:snippet>
-      <search:match path="fn:doc(&quot;/purchases/900e1424-b2f0-4534-b2b2-b28d3d5c416b.json&quot;)/object-node()">This is a test</search:match>
+      <search:match path="fn:doc(&quot;/kafka.marklogic/900e1424-b2f0-4534-b2b2-b28d3d5c416b.json&quot;)/object-node()">This is a test</search:match>
     </search:snippet>
   </search:result>
   <search:metrics>
@@ -309,7 +310,7 @@ This should give back a search:response xml fragment. See below for an example:
 ### End-to-end Test
 
 Now that everything has been set up and tested you can send complete messages with the MQTT client.
-This client can be installed for various OSes. Find it [here](https://mqttx.app/).
+This client can be installed for various OS-es. Find it [here](https://mqttx.app/).
 
 ### Cleanup
 
